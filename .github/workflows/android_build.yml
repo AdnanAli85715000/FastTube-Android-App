@@ -41,7 +41,7 @@ jobs:
         buildozer android debug
 
     - name: Upload APK artifact # Banayi hui APK file ko GitHub artifacts ke taur par upload karein
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: FastTube-APK # Artifact ka naam
         path: bin/*.apk # bin folder mein banne wali APK file ka path
