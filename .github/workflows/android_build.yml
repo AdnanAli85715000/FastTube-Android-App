@@ -1,10 +1,10 @@
-name: Android Build with Buildozer # Workflow ka naam
+name: Android Build with Buildozer
 
 on:
   push:
     branches:
-      - master # Jab master branch par code push ho to build karein
-      - main   # Ya main branch agar default hai
+      - master
+      - main
   pull_request:
     branches:
       - master
@@ -12,36 +12,31 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Latest Ubuntu environment par run karein
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code # Repository code ko checkout karein
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Set up Python # Python environment set up karein
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9' # Python version jo Buildozer support karta hai
+        python-version: '3.9'
 
-    - name: Install Buildozer and dependencies # Buildozer aur zaroori system dependencies install karein
+    - name: Install Buildozer and dependencies
       run: |
-        pip install --upgrade pip setuptools # pip aur setuptools ko update karein
-        pip install buildozer==1.2.0 # Buildozer ka specific version jo stable ho
-        # Android build ke liye zaroori system dependencies
+        pip install --upgrade pip setuptools
+        pip install buildozer==1.2.0 cython
         sudo apt-get update
         sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses-dev libncurses5-dev libncursesw5-dev libssl-dev build-essential libc6-dev
-        sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev # Kivy dependencies
+        sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-    - name: Configure Buildozer # Buildozer ko configure karein
-      run: |
-        buildozer init # buildozer.spec file ko check aur configure karein
-        
-    - name: Build Android APK # Android APK build karein (debug mode mein)
+    - name: Build Android APK
       run: |
         buildozer android debug
 
-    - name: Upload APK artifact # Banayi hui APK file ko GitHub artifacts ke taur par upload karein
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: FastTube-APK # Artifact ka naam
-        path: bin/*.apk # bin folder mein banne wali APK file ka path
+        name: FastTube-APK
+        path: bin/*.apk
