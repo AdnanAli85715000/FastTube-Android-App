@@ -33,6 +33,19 @@ android.api = 33
 # (list) Android minimum SDK version. Purane phones ke liye compatibility.
 android.minapi = 21
 
+# (str) Android NDK version (Buildozer ke liye recommended).
+android.ndk = 25b
+
+# (list) Android NDK API version. Target API level ke mutabiq ho.
+# NDK 25b ke sath aam taur par API 21, 24, 26, 29, 30, 31, 32, 33 compatible hote hain.
+# 21 purane devices ke liye bhi theek hai.
+android.ndk_api = 21
+
+# (str) Python-for-Android (p4a) version.
+# Yeh Buildozer ka core component hai. Kabhi kabhi iske versioning se masle hote hain.
+# Hum aik stable version specify karenge.
+p4a.version = 0.6.0 # Buildozer 1.2.0 ke sath compatible stable version
+
 # (list) Android ABI list jin ke liye build karna hai.
 # arm64-v8a modern Android phones ke liye common hai.
 android.arch = arm64-v8a
@@ -46,44 +59,44 @@ android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 # (list) Android activities. Share Intent handling ke liye yeh section ahem hai.
 # Yeh AndroidManifest.xml mein intent-filters add karega.
 android.activities = \
-org.kivy.android.PythonActivity: \
-- intent_filters: \
-- action: android.intent.action.SEND \
-- category: android.intent.category.DEFAULT \
-- data: \
-- scheme: content \
-- host: * \
-- mime_type: text/plain \
-- data: \
-- scheme: http \
-- host: youtu.be \
-- data: \
-- scheme: http \
-- host: www.youtu.be \
-- data: \
-- scheme: https \
-- host: youtu.be \
-- data: \
-- scheme: https \
-- host: www.youtu.be \
-- data: \
-- scheme: http \
-- host: youtube.com \
-- data: \
-- scheme: http \
-- host: www.youtube.com \
-- data: \
-- scheme: https \
-- host: youtube.com \
-- data: \
-- scheme: https \
-- host: www.youtube.com \
-- data: \
-- scheme: http \
-- host: m.youtube.com \
-- data: \
-- scheme: https \
-- host: m.youtube.com \
+    org.kivy.android.PythonActivity: \
+        - intent_filters: \
+            - action: android.intent.action.SEND \
+            - category: android.intent.category.DEFAULT \
+            - data: \
+                - scheme: content \
+                - host: * \
+                - mime_type: text/plain \
+            - data: \
+                - scheme: http \
+                - host: youtu.be \
+            - data: \
+                - scheme: http \
+                - host: www.youtu.be \
+            - data: \
+                - scheme: https \
+                - host: youtu.be \
+            - data: \
+                - scheme: https \
+                - host: www.youtu.be \
+            - data: \
+                - scheme: http \
+                - host: youtube.com \
+            - data: \
+                - scheme: http \
+                - host: www.youtube.com \
+            - data: \
+                - scheme: https \
+                - host: youtube.com \
+            - data: \
+                - scheme: https \
+                - host: www.youtube.com \
+            - data: \
+                - scheme: http \
+                - host: m.youtube.com \
+            - data: \
+                - scheme: https \
+                - host: m.youtube.com \
 
 # (str) Android entry point for the app (usually main.py)
 android.entrypoint = main.py
