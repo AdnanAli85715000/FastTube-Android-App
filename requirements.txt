@@ -1,0 +1,6 @@
+kivy==2.1.0
+yt-dlp
+requests
+certifi
+pyjnius
+ffmpeg # yt-dlp ke liye lazmi
