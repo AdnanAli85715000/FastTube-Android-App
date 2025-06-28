@@ -18,12 +18,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Set working directory
-      run: |
-        echo "🛠️ Moving into correct folder"
-        cd $GITHUB_WORKSPACE
-        ls -la
-
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -31,20 +25,22 @@ jobs:
 
     - name: Install Buildozer and dependencies
       run: |
-        sudo apt update
-        sudo apt install -y \
-          git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev \
-          libncurses-dev libncurses5-dev libncursesw5-dev libssl-dev build-essential \
-          libc6-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libpulse-dev libharfbuzz-dev libibus-1.0-dev libfluidsynth-dev \
-          cython
         pip install --upgrade pip setuptools
         pip install buildozer==1.2.0
+        pip install cython # Cython ko install karein
+        sudo apt-get update
+        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses-dev libncurses5-dev libncursesw5-dev libssl-dev build-essential libc6-dev
+        sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-    - name: Build Android APK
+    - name: Configure Buildozer # Buildozer init ko project root mein chalayen
       run: |
-        cd $GITHUB_WORKSPACE
+        buildozer init
+      working-directory: ./ # Yeh line add karein ya confirm karein ke yeh yahan hai
+
+    - name: Build Android APK # Build command ko bhi project root mein chalayen
+      run: |
         buildozer android debug
+      working-directory: ./ # Yeh line add karein ya confirm karein ke yeh yahan hai
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
