@@ -2,47 +2,74 @@ name: Android Build with Buildozer
 
 on:
   push:
-    branches:
-      - master
-      - main
+    branches: [master, main]
   pull_request:
-    branches:
-      - master
-      - main
+    branches: [master, main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.10'
 
-    - name: Install Buildozer and dependencies
+    - name: Install system dependencies
       run: |
-        pip install --upgrade pip setuptools
-        pip install buildozer==1.2.0
-        pip install cython # Cython ko install karein
         sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses-dev libncurses5-dev libncursesw5-dev libssl-dev build-essential libc6-dev
-        sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
-    - name: Configure Buildozer # Buildozer init ko project root mein chalayen
-      run: |
-        buildozer init
-      working-directory: ./ # Yeh line add karein ya confirm karein ke yeh yahan hai
+        sudo apt-get install -y \
+          git zip unzip openjdk-17-jdk \
+          python3-pip autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev libssl-dev \
+          build-essential wget curl unzip ccache \
+          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-    - name: Build Android APK # Build command ko bhi project root mein chalayen
+    - name: Install Python dependencies
       run: |
-        buildozer android debug
-      working-directory: ./ # Yeh line add karein ya confirm karein ke yeh yahan hai
+        python -m pip install --upgrade pip wheel setuptools
+        pip install buildozer==1.5.0 cython==0.29.33
+        pip install ffmpeg-python yt-dlp
+
+    - name: Setup Android SDK
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        
+        export ANDROID_SDK_ROOT="$HOME/android_sdk"
+        mkdir -p "$ANDROID_SDK_ROOT"
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+        unzip cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
+        mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools-latest"
+        rm cmdline-tools.zip
+        
+        echo "$ANDROID_SDK_ROOT/cmdline-tools-latest/bin" >> $GITHUB_PATH
+        echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+        
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "platforms;android-33" "build-tools;34.0.0"
+
+    - name: Setup Android NDK
+      run: |
+        export ANDROID_NDK_HOME="$HOME/android-ndk-r25b"
+        wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+        unzip android-ndk-r25b-linux.zip -d "$HOME"
+        rm android-ndk-r25b-linux.zip
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+    - name: Build APK
+      run: |
+        # صرف بلڈ کریں، init نہ چلائیں کیونکہ spec پہلے سے موجود ہے
+        buildozer -v android debug
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: FastTube-APK
         path: bin/*.apk
+        if-no-files-found: error
