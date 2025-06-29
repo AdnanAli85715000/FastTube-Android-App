@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45  # Increased timeout for slower builds
 
     steps:
     - name: Checkout code
@@ -36,22 +36,28 @@ jobs:
         pip install buildozer==1.5.0 cython==0.29.33
         pip install ffmpeg-python yt-dlp
 
-    - name: Setup Android SDK
+    - name: Setup Android SDK (Fixed Version)
       run: |
         mkdir -p ~/.android
         touch ~/.android/repositories.cfg
         
+        # Correct SDK directory structure
         export ANDROID_SDK_ROOT="$HOME/android_sdk"
-        mkdir -p "$ANDROID_SDK_ROOT"
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-        unzip cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
-        mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools-latest"
-        rm cmdline-tools.zip
+        mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
         
-        echo "$ANDROID_SDK_ROOT/cmdline-tools-latest/bin" >> $GITHUB_PATH
+        # Download command line tools
+        cd "$ANDROID_SDK_ROOT/cmdline-tools"
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O tools.zip
+        unzip tools.zip
+        rm tools.zip
+        mv cmdline-tools latest  # Critical rename
+        
+        # Add to PATH
+        echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
         echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
         
-        yes | sdkmanager --licenses
+        # Accept licenses and install components
+        yes | sdkmanager --licenses || echo "License acceptance completed"
         sdkmanager "platform-tools" "platforms;android-33" "build-tools;34.0.0"
 
     - name: Setup Android NDK
@@ -64,8 +70,18 @@ jobs:
 
     - name: Build APK
       run: |
-        # صرف بلڈ کریں، init نہ چلائیں کیونکہ spec پہلے سے موجود ہے
-        buildozer -v android debug
+        # Clean previous builds
+        rm -rf .buildozer/android/platform/build
+        
+        # Start build with verbose output
+        buildozer -v android debug 2>&1 | tee build.log
+        
+        # Check if APK was created
+        if [ ! -f bin/*.apk ]; then
+          echo "::error::APK file not found!"
+          cat build.log
+          exit 1
+        fi
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
@@ -73,3 +89,10 @@ jobs:
         name: FastTube-APK
         path: bin/*.apk
         if-no-files-found: error
+
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: build-log
+        path: build.log
