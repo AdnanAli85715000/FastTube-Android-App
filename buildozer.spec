@@ -9,43 +9,47 @@ package.name = com.fasttube.app
 # (str) Package domain (Android/iOS packaging ke liye zaroori)
 package.domain = org.fasttube.dev
 
-# (str) Application ka version (aam taur par buildozer khud increase karta hai)
+# (str) Application ka version
 version = 0.1
 
-# (list) Aapki application ki Python dependencies.
+# (list) Python libraries required
 requirements = python3,kivy==2.1.0,requests,certifi,pyjnius,ffmpeg,yt-dlp
 
-# (str) Kivy version jo aap use kar rahen hain.
+# (str) Kivy version
 kivy.version = 2.1.0
 
-# (list) Custom source folders for python modules (directories relative to the main.py)
-source.include_dirs =
+# (list) Python modules folder
+source.dir = . # <<< Yeh line [app] section mein redundant hai, lekin troubleshooting ke liye rakhi hai
 
-# (str) Android app ki category (Google Play Store ke liye).
+# (str) Android category
 android.category = video
 
-# (list) Android target SDK version. Latest stable API level istemal karein.
+# (int) Android target and minimum API
 android.api = 33
-
-# (list) Android minimum SDK version. Purane phones ke liye compatibility.
 android.minapi = 21
 
-# (str) Android NDK version (Buildozer ke liye recommended).
+# (str) Android NDK settings
 android.ndk = 25b
-
-# (list) Android NDK API version. Target API level ke mutabiq ho.
 android.ndk_api = 21
+# NDK path ko manually android_build.yml mein set kiya gaya hai,
+# lekin yahan specify karna Buildozer ki internal logic ke liye madadgar ho sakta hai.
+android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
 
-# (str) Python-for-Android (p4a) version.
-p4a.version = 0.6.0
+# (str) Python-for-Android version (master = latest stable from GitHub)
+# "master" latest version uthayega. Agar stability issue aaye to specific version (e.g., 0.6.0) use karein.
+p4a.version = master
 
-# (list) Android ABI list jin ke liye build karna hai.
+# (str) Build tools version (fixes AIDL error)
+# Yeh version android_build.yml mein install hone wale version se match hona chahiye.
+android.build_tools_version = 34.0.0 # <<< Yahan 36.0.0 se 34.0.0 kiya gaya hai
+
+# (list) ABI to target
 android.arch = arm64-v8a
 
-# (list) Android permissions jo aapki app ko chahiye hongi.
+# (list) Required permissions
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
-# (list) Android activities. Share Intent handling ke liye yeh section ahem hai.
+# (list) Share Intent Filters (YouTube Links)
 android.activities = \
     org.kivy.android.PythonActivity: \
         - intent_filters: \
@@ -86,37 +90,27 @@ android.activities = \
                 - scheme: https \
                 - host: m.youtube.com \
 
-# (str) Android entry point for the app (usually main.py)
+# (str) Main script to run
 android.entrypoint = main.py
 
-# (str) Android app icon. Agar aapke project folder mein icon.png hai to path den.
-# android.icon = %(source.dir)s/icon.png
-
-# (str) Android splash screen.
-# android.splash = %(source.dir)s/splash.png
-
-# (bool) Full screen app
+# (bools)
 fullscreen = 1
-
-# (bool) Allow a debug build (0 = release build)
 debug = 1
-
-# (bool) Optimize for size
 optimize = 0
 
-# (list) Presplash background color (for Android)
-# android.presplash_bg = #000000
-
-# (str) User interface to use for logs
+# (str) Log verbosity level
 log_level = 2
 
-# (str) The directory containing the app's source code (Redundant but for fix)
-source_dir = . # <<< Nayi line yahan add ki gayi hai, [app] section mein
+# (str) Redundant source fix (yeh line [app] section mein hai)
+# source_dir = . # <<< Yeh line ab upar 'source.dir = .' ke naam se mojood hai, isay duplicate na karein.
 
 [buildozer]
 
-# (str) Default distribution to use
+# (str) Dist name
 dist_name = fasttube
 
-# (str) The directory containing the app's source code
-source_dir = . # <<< Yeh line pehle se mojood hai, isay rehne den
+# (str) Source directory again (redundant but safe)
+source_dir = .
+
+# ✅ Auto accept Android SDK licenses
+android.accept_sdk_license = True
