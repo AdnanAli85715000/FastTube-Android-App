@@ -1,6 +1,7 @@
 kivy==2.1.0
-yt-dlp
 requests
 certifi
+yt-dlp
 pyjnius
-ffmpeg # yt-dlp ke liye lazmi
+ffmpeg
+Pillow

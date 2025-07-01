@@ -1,519 +1,605 @@
 # -*- coding: utf-8 -*-
-# Kivy framework ke zaroori modules import karein
+# Kivy framework import karein
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.core.window import Window
-from kivy.properties import StringProperty, NumericProperty
+from kivy.uix.recycleview import RecycleView
+from kivy.uix.recycleview.views import RecycleDataViewBehavior
+from kivy.properties import BooleanProperty, StringProperty, NumericProperty
 from kivy.clock import Clock
+from kivy.lang import Builder
 from kivy.utils import platform
 
-# Video downloading ke liye zaroori modules
+# Python ke built-in modules import karein
 import threading
-import subprocess
 import os
-import re # Regular expressions for URL validation
-import json # yt-dlp info ko parse karne ke liye
-import time # Time module for unique filenames and tracking
+import sys
+import json
+import time
 
-# Android Intent handling ke liye pyjnius (sirf Android par)
-if platform == 'android':
-from jnius import autoclass, cast
-
-# Window size ko mobile-friendly set karein
-Window.size = (360, 640)
-
-# Download directory setup (Android par public Download directory)
-if platform == 'android':
-Environment = autoclass('android.os.Environment')
-DOWNLOAD_DIR = os.path.join(Environment.getExternalStorageDirectory().getAbsolutePath(), 'Download', 'FastTubeDownloads')
-else:
-DOWNLOAD_DIR = os.path.join(os.getcwd(), 'FastTubeDownloads')
-
-# Download directory agar mojood nahi hai to banayen
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-class QualityPopup(Popup):
-"""
-Ek pop-up jo YouTube video ke available qualities aur formats ko show karta hai,
-aur user ko apni pasand ki quality select karne deta hai.
-"""
-def __init__(self, url, callback, **kwargs):
-super().__init__(title='Quality Choose Karein', size_hint=(0.95, 0.8), **kwargs)
-self.url = url
-self.callback = callback
-self.selected_format = None # User ki select ki hui quality/format
-self.format_buttons = [] # Buttons ko track karne ke liye
-self.status_label = Label(text='Formats load ho rahen hain...', size_hint_y=None, height=40)
-
-self.layout = BoxLayout(orientation='vertical')
-self.layout.add_widget(self.status_label)
-
-# Scrollable area for quality buttons
-self.scroll = ScrollView(size_hint=(1, 0.8))
-self.grid = GridLayout(cols=1, spacing=10, size_hint_y=None)
-self.grid.bind(minimum_height=self.grid.setter('height'))
-self.scroll.add_widget(self.grid)
-self.layout.add_widget(self.scroll)
-
-# Download button
-self.download_btn = Button(
-text='Download Selected',
-size_hint=(1, 0.15),
-font_size='20sp',
-background_normal='',
-background_color=(0.2, 0.6, 0.8, 1) # Blue color
-)
-self.download_btn.bind(on_press=self.on_download)
-self.download_btn.disabled = True # Jab tak quality select na ho, disabled rakhen
-self.layout.add_widget(self.download_btn)
-
-self.content = self.layout
-
-# Formats ko background thread mein load karein
-threading.Thread(target=self.load_formats).start()
-
-def load_formats(self):
-"""
-YouTube video ke available formats ko yt-dlp se fetch karta hai
-aur UI par buttons ke taur par add karta hai.
-"""
+# yt-dlp aur requests library import karein
 try:
-# yt-dlp options to get info without downloading
-ydl_opts = {
-'quiet': True,
-'skip_download': True,
-'forcejson': True,
-'simulate': True,
-'format': 'bestvideo+bestaudio/best' # Default best quality for info
-}
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-info = ydl.extract_info(self.url, download=False)
-formats = info.get('formats', [])
-title = info.get('title', 'Video')
+    import yt_dlp
+    import requests
+except ImportError:
+    # Agar libraries install na hon to error message den
+    print("yt-dlp or requests not installed. Please run 'pip install yt-dlp requests certifi'")
+    sys.exit(1)
 
-# Audio aur Video formats ko alag karein
-# MP3 formats (vcodec is none, acodec is not none, ext is mp3 or m4a)
-audios = sorted([f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('abr')],
-key=lambda x: x.get('abr', 0), reverse=True)
-# Video formats (vcodec is not none, acodec is not none, ext is mp4)
-videos = sorted([f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4' and f.get('height')],
-key=lambda x: x.get('height', 0), reverse=True)
-
-# UI update main thread mein hona chahiye
-Clock.schedule_once(lambda dt: self.add_format_buttons(videos, audios, title))
-
-except yt_dlp.utils.DownloadError as e:
-Clock.schedule_once(lambda dt: self.update_status_and_dismiss(f"[color=ff0000]Error: Video formats load nahi ho sake. {e}[/color]"))
-except Exception as e:
-Clock.schedule_once(lambda dt: self.update_status_and_dismiss(f"[color=ff0000]Error loading formats: {e}[/color]"))
-
-def add_format_buttons(self, videos, audios, title):
-"""Fetched formats ke liye UI buttons add karta hai."""
-self.title = f'"{title[:30]}..." ke liye Quality Choose Karein'
-self.status_label.text = 'Formats Load Ho Gaye.'
-
-if not videos and not audios:
-self.grid.add_widget(Label(text="Koi downloadable format nahi mila.", size_hint_y=None, height=50))
-self.download_btn.disabled = True
-return
-
-# Video Qualities
-self.grid.add_widget(Label(text='[b]Video (MP4)[/b]', markup=True, size_hint_y=None, height=40, font_size='18sp'))
-for f in videos:
-quality = f.get('height', 'unknown')
-filesize_mb = round(f.get('filesize', 0) / (1024 * 1024), 2) if f.get('filesize') else 'N/A'
-label = f"MP4 - {quality}p - {filesize_mb}MB"
-btn = Button(text=label, size_hint_y=None, height=50)
-btn.bind(on_press=lambda inst, fmt=f: self.set_selection(fmt, inst))
-self.grid.add_widget(btn)
-self.format_buttons.append(btn)
-
-# Audio Qualities
-self.grid.add_widget(Label(text='[b]Audio (MP3)[/b]', markup=True, size_hint_y=None, height=40, font_size='18sp'))
-for f in audios:
-abr = f.get('abr', 'unknown')
-filesize_mb = round(f.get('filesize', 0) / (1024 * 1024), 2) if f.get('filesize') else 'N/A'
-label = f"MP3 - {abr}kbps - {filesize_mb}MB"
-btn = Button(text=label, size_hint_y=None, height=50)
-btn.bind(on_press=lambda inst, fmt=f: self.set_selection(fmt, inst))
-self.grid.add_widget(btn)
-self.format_buttons.append(btn)
-
-self.download_btn.disabled = False # Formats load hone ke baad enable karein
-
-def set_selection(self, fmt, button_instance):
-"""User ki selection ko set karta hai aur button ko highlight karta hai."""
-self.selected_format = fmt
-# Sab buttons ko reset karein
-for btn in self.format_buttons:
-btn.background_color = (1, 1, 1, 1) # Default white
-btn.color = (0, 0, 0, 1) # Default black text
-# Select kiye hue button ko highlight karein
-button_instance.background_color = (0.2, 0.6, 0.8, 1) # Highlight color
-button_instance.color = (1, 1, 1, 1) # White text
-
-def on_download(self, instance):
-"""Selected quality ke sath download shuru karta hai."""
-if self.selected_format:
-self.dismiss() # Pop-up ko band karein
-self.callback(self.selected_format) # Callback function ko call karein
-else:
-# Status message parent screen par update karein
-App.get_running_app().root.ids.main_screen.update_status("[color=ff0000]Error: Quality select karein.[/color]")
-
-def update_status_and_dismiss(self, message):
-"""Status update kare aur pop-up ko dismiss kare."""
-self.dismiss()
-# Status message parent screen par update karein
-App.get_running_app().root.ids.main_screen.update_status(message)
-
-class DownloadItem(BoxLayout):
-"""
-Download list mein har individual download item ko represent karta hai.
-"""
-filename_display = StringProperty('')
-progress_text = StringProperty('0%')
-download_speed = StringProperty('0 KB/s')
-
-def __init__(self, url, title, selected_format, **kwargs):
-super().__init__(orientation='horizontal', size_hint_y=None, height=60, **kwargs)
-self.url = url
-self.title = title
-self.selected_format = selected_format
-self.process = None # Subprocess ko track karne ke liye
-self.download_thread = None # Download thread ko track karne ke liye
-self.last_downloaded_bytes = 0
-self.last_timestamp = time.time()
-
-self.filename_display = f"{self.title[:25]}..." if len(self.title) > 25 else self.title
-
-self.add_widget(Label(text=self.filename_display, size_hint_x=0.4, font_size='14sp'))
-self.progress_label = Label(text=self.progress_text, size_hint_x=0.2, font_size='14sp')
-self.add_widget(self.progress_label)
-self.speed_label = Label(text=self.download_speed, size_hint_x=0.2, font_size='14sp')
-self.add_widget(self.speed_label)
-
-# Pause/Resume/Cancel buttons ko ignore kiya gaya hai jaisa ke request kiya gaya
-# self.pause_btn = Button(text='Pause', size_hint_x=0.1)
-# self.cancel_btn = Button(text='Cancel', size_hint_x=0.1)
-# self.add_widget(self.pause_btn)
-# self.add_widget(self.cancel_btn)
-
-self.start_download()
-
-def start_download(self):
-"""Download process ko background thread mein shuru karta hai."""
-self.download_thread = threading.Thread(target=self.execute_download)
-self.download_thread.daemon = True # App band hone par thread bhi band ho jaye
-self.download_thread.start()
-
-def execute_download(self):
-"""yt-dlp ka istemal kar ke select ki hui quality download karta hai."""
-try:
-# Output filename template
-output_template = os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s')
-
-ydl_opts = {
-'format': self.selected_format['format_id'],
-'outtmpl': output_template,
-'progress_hooks': [self.download_progress_hook],
-'quiet': True,
-'noplaylist': True, # Sirf single video download karein
-}
-
-# Agar audio only hai to --extract-audio aur --audio-format lagayen
-if self.selected_format.get('vcodec') == 'none' and self.selected_format.get('acodec') != 'none':
-ydl_opts['extract_audio'] = True
-ydl_opts['audioformat'] = self.selected_format.get('ext', 'mp3') # MP3 ya jo bhi audio format hai
-ydl_opts['postprocessors'] = [{
-'key': 'FFmpegExtractAudio',
-'preferredcodec': ydl_opts['audioformat'],
-'preferredquality': self.selected_format.get('abr', '192') # Use selected bitrate
-}]
-
-# Agar video aur audio alag alag hain to merge karein
-# yt-dlp aam taur par best video aur best audio ko khud merge karta hai agar format 'best' ho.
-# Agar specific video format select kiya hai aur us mein audio nahi hai, to best audio merge karein
-if self.selected_format.get('vcodec') != 'none' and self.selected_format.get('acodec') == 'none':
-ydl_opts['format'] = f"{self.selected_format['format_id']}+bestaudio[ext=m4a]"
-ydl_opts['merge_output_format'] = 'mp4'
-
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-ydl.download([self.url])
-
-Clock.schedule_once(lambda dt: self.update_item_status(
-f"[color=008000]Done[/color]"))
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', '100%'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-
-except yt_dlp.utils.DownloadError as e:
-Clock.schedule_once(lambda dt: self.update_item_status(
-f"[color=ff0000]Error: {e}[/color]"))
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', 'Error'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-except FileNotFoundError:
-Clock.schedule_once(lambda dt: self.update_item_status(
-"[color=ff0000]Error: yt-dlp ya ffmpeg install nahi hain.[/color]"))
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', 'Error'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-except Exception as e:
-Clock.schedule_once(lambda dt: self.update_item_status(
-f"[color=ff0000]Unexpected Error: {e}[/color]"))
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', 'Error'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-
-def download_progress_hook(self, d):
-"""yt-dlp se download progress receive karta hai aur UI update karta hai."""
-if d['status'] == 'downloading':
-percent = d.get('_percent_str', '0%').strip()
-speed_str = d.get('_speed_str', 'N/A').strip()
-
-# Calculate actual speed if _speed_str is not reliable or missing
-if 'downloaded_bytes' in d and 'elapsed' in d:
-current_bytes = d['downloaded_bytes']
-current_time = time.time()
-
-if current_time - self.last_timestamp > 0: # Avoid division by zero
-bytes_diff = current_bytes - self.last_downloaded_bytes
-time_diff = current_time - self.last_timestamp
-
-if time_diff > 0:
-calculated_speed_bps = bytes_diff / time_diff
-if calculated_speed_bps >= 1024 * 1024:
-speed_str = f"{calculated_speed_bps / (1024 * 1024):.2f} MB/s"
-elif calculated_speed_bps >= 1024:
-speed_str = f"{calculated_speed_bps / 1024:.2f} KB/s"
-else:
-speed_str = f"{calculated_speed_bps:.0f} B/s"
-
-self.last_downloaded_bytes = current_bytes
-self.last_timestamp = current_time
-
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', percent))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', speed_str))
-elif d['status'] == 'finished':
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', '100%'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-Clock.schedule_once(lambda dt: self.update_item_status("[color=008000]Done[/color]"))
-elif d['status'] == 'error':
-Clock.schedule_once(lambda dt: self.update_item_status("[color=ff0000]Error[/color]"))
-Clock.schedule_once(lambda dt: setattr(self, 'progress_text', 'Error'))
-Clock.schedule_once(lambda dt: setattr(self, 'download_speed', ''))
-
-def update_item_status(self, message):
-"""Download item ke status label ko update karta hai."""
-self.progress_label.text = message # Progress label ko status ke liye istemal karein
-
-class MainScreen(Screen):
-"""
-App ki main screen jahan user URL paste karta hai aur quality select karta hai.
-"""
-url_input_text = StringProperty('')
-status_message = StringProperty('YouTube link paste karein ya share karein.')
-
-def __init__(self, **kwargs):
-super().__init__(**kwargs)
-self.name = 'main_screen' # ID for easy access from other classes
-
-layout = BoxLayout(orientation='vertical', padding=[20, 20, 20, 20], spacing=10)
-
-# App title
-layout.add_widget(Label(text='[b]FastTube Downloader[/b]', markup=True,
-font_size='24sp', size_hint_y=0.15))
-
-# URL input field
-self.url_input = TextInput(
-hint_text='YouTube URL yahan paste karein',
-size_hint_y=0.2,
-multiline=False,
-font_size='18sp',
-padding=[10, 10, 10, 10]
-)
-self.url_input.bind(text=self.setter('url_input_text'))
-layout.add_widget(self.url_input)
-
-# Choose Quality & Download button
-self.choose_quality_btn = Button(
-text='[b]Quality Choose Karein & Download[/b]',
-markup=True,
-size_hint_y=0.15,
-font_size='20sp',
-background_normal='',
-background_color=(0.2, 0.6, 0.8, 1) # Blue color
-)
-self.choose_quality_btn.bind(on_press=self.open_quality_popup)
-layout.add_widget(self.choose_quality_btn)
-
-# Status Label
-self.status_label = Label(
-text=self.status_message,
-size_hint_y=0.1,
-font_size='16sp',
-markup=True,
-halign='center',
-valign='middle'
-)
-self.bind(status_message=self.status_label.setter('text'))
-layout.add_widget(self.status_label)
-
-# Progress Bar (Label ke taur par, as Kivy's ProgressBar is complex for simple display)
-# MainScreen par global progress nahi, har download item ka apna progress hoga
-# Isko yahan se hata diya gaya hai.
-
-self.add_widget(layout)
-
-# Android Intent handling ko schedule karein
-Clock.schedule_once(self.handle_android_intent, 0)
-
-def update_status(self, message):
-"""Status message ko UI par update karta hai."""
-self.status_message = message
-
-def is_valid_youtube_url(self, url):
-"""YouTube URL ko validate karta hai."""
-youtube_regex = (
-r'(https?://)?(www\.)?'
-'(youtube|youtu|youtube-nocookie)\.(com|be)/'
-'(watch\?v=|embed/|v/|.+\?v=)?([^&=%\?]{11})')
-return re.match(youtube_regex, url) is not None
-
-def open_quality_popup(self, instance):
-"""Quality selection pop-up ko open karta hai."""
-url = self.url_input_text.strip()
-if not url:
-self.update_status("[color=ff0000]Error: URL darj karein.[/color]")
-return
-if not self.is_valid_youtube_url(url):
-self.update_status("[color=ff0000]Error: Invalid YouTube URL.[/color]")
-return
-
-self.update_status("[color=0000ff]Formats load ho rahen hain...[/color]")
-popup = QualityPopup(url, self.download_selected_format)
-popup.open()
-
-def download_selected_format(self, selected_format):
-"""
-User ki select ki hui quality/format ke mutabiq download shuru karta hai.
-"""
-url = self.url_input_text.strip()
-# Download item ko DownloadsScreen mein add karein
-App.get_running_app().root.ids.screen_manager.get_screen('downloads_screen').add_download(url, selected_format)
-self.update_status(f"[color=0000ff]Download shuru: {selected_format.get('format_note', 'Selected Format')}[/color]")
-# Downloads screen par switch karein
-App.get_running_app().root.ids.screen_manager.current = 'downloads_screen'
-
-def handle_android_intent(self, dt):
-"""Android Share Intent se URL capture karta hai."""
+# Pyjnius import karein Android-specific functionalities ke liye
+# Yeh sirf Android par chalega
 if platform == 'android':
-PythonActivity = autoclass('org.kivy.android.PythonActivity')
-Intent = autoclass('android.content.Intent')
+    try:
+        from jnius import autoclass, cast
+        # Android classes ko import karein
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Intent = autoclass('android.content.Intent')
+        Uri = autoclass('android.net.Uri')
+        String = autoclass('java.lang.String')
+        Context = autoclass('android.content.Context')
+        File = autoclass('java.io.File')
+        Environment = autoclass('android.os.Environment')
+        PackageManager = autoclass('android.content.pm.PackageManager')
+        Toast = autoclass('android.widget.Toast')
 
-intent = PythonActivity.mActivity.getIntent()
-action = intent.getAction()
+        # Permissions check karein
+        # STORAGE_PERMISSION_REQUEST_CODE = 1
+        # def request_permissions():
+        #     from android.permissions import request_permissions, Permission
+        #     request_permissions([Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
 
-if action == Intent.ACTION_SEND:
-shared_text = intent.getStringExtra(Intent.EXTRA_TEXT)
-if shared_text and self.is_valid_youtube_url(shared_text):
-self.url_input.text = shared_text
-self.update_status("[color=000080]YouTube link share intent se mila.[/color]")
-# Link milte hi quality popup open karein
-Clock.schedule_once(lambda dt: self.open_quality_popup(None), 0.5) # Thodi der baad open karein
-else:
-self.update_status("[color=ff8c00]Share intent mila, lekin valid YouTube link nahi.[/color]")
+    except Exception as e:
+        print(f"Pyjnius or Android classes import failed: {e}")
+        # Agar pyjnius na mile to Android-specific features disable kar den
+        platform = 'other' # Platform ko 'other' set kar den taake error na aaye
 
-# Intent ko clear karein taake app dobara launch hone par purana intent na uthaye
-# Yeh step ahem hai taake har launch par naya intent hi process ho
-intent.setAction(Intent.ACTION_MAIN)
-intent.removeCategory(Intent.CATEGORY_LAUNCHER)
-intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-PythonActivity.mActivity.setIntent(intent)
+# Kivy UI layout ko define karein (KV language)
+KV = """
+#:import C kivy.utils.get_color_from_hex
+<DownloadItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: dp(100)
+    padding: dp(10)
+    spacing: dp(10)
+    canvas.before:
+        Color:
+            rgba: C('#F3F4F6') if self.index % 2 == 0 else C('#E5E7EB') # Background color for rows
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    
+    AsyncImage:
+        id: thumbnail_image
+        source: root.thumbnail # Video thumbnail
+        size_hint: None, None
+        size: dp(80), dp(80)
+        allow_stretch: True
+        keep_ratio: True
+        canvas.before:
+            Color:
+                rgba: 0.8, 0.8, 0.8, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
 
-class DownloadsScreen(Screen):
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(5)
+        spacing: dp(5)
+        Label:
+            id: title_label
+            text: root.video_title # Video ka title
+            font_size: '16sp'
+            color: C('#374151')
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            size_hint_y: None
+            height: self.texture_size[1]
+        Label:
+            id: progress_label
+            text: root.progress_text # Download progress (e.g., 50% - 1.2MB/s)
+            font_size: '14sp'
+            color: C('#6B7280')
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            size_hint_y: None
+            height: self.texture_size[1]
+        ProgressBar:
+            id: progress_bar
+            value: root.progress_value # Progress bar value (0-100)
+            size_hint_y: None
+            height: dp(10)
+            max: 100
+            color: C('#22C55E') # Green color for progress
+
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: None
+        width: dp(60)
+        spacing: dp(5)
+        Button:
+            id: action_button
+            text: root.action_text # Pause/Resume/Cancel
+            font_size: '12sp'
+            background_normal: ''
+            background_color: C('#3B82F6') if root.action_text == 'Pause' else C('#F97316') if root.action_text == 'Resume' else C('#EF4444')
+            color: C('#FFFFFF')
+            on_release: app.root.download_manager.toggle_download_status(root.download_id)
+            size_hint_y: None
+            height: dp(35)
+        Button:
+            text: 'Delete'
+            font_size: '12sp'
+            background_normal: ''
+            background_color: C('#DC2626')
+            color: C('#FFFFFF')
+            on_release: app.root.download_manager.delete_download(root.download_id)
+            size_hint_y: None
+            height: dp(35)
+
+<FastTubeAppLayout>:
+    orientation: 'vertical'
+    padding: dp(10)
+    spacing: dp(10)
+    
+    # Top Section: Search Bar
+    BoxLayout:
+        size_hint_y: None
+        height: dp(50)
+        TextInput:
+            id: url_input
+            hint_text: 'Video URL paste karein ya search karein...'
+            multiline: False
+            size_hint_x: 0.8
+            font_size: '18sp'
+            padding: [dp(10), dp(10), dp(10), dp(10)]
+            background_normal: ''
+            background_active: ''
+            background_color: C('#F3F4F6')
+            foreground_color: C('#374151')
+            cursor_color: C('#10B981')
+            halign: 'left'
+            on_text_validate: app.root.search_or_process_url(self.text)
+        Button:
+            text: 'Search'
+            size_hint_x: 0.2
+            font_size: '18sp'
+            background_normal: ''
+            background_color: C('#10B981') # Green color
+            color: C('#FFFFFF')
+            on_release: app.root.search_or_process_url(url_input.text)
+    
+    # Main Content Area: Download List
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_y: 1
+        Label:
+            text: 'Ongoing Downloads'
+            font_size: '20sp'
+            color: C('#374151')
+            size_hint_y: None
+            height: dp(40)
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.width, None
+            padding_x: dp(10)
+
+        RecycleView:
+            id: rv_downloads
+            viewclass: 'DownloadItem'
+            data: app.root.download_manager.download_data
+            size_hint_y: 1
+            bar_width: dp(10)
+            scroll_type: ['bars', 'content']
+            do_scroll_x: False
+            do_scroll_y: True
+            RecycleBoxLayout:
+                default_size: None, dp(100)
+                default_size_hint: 1, None
+                orientation: 'vertical'
+                spacing: dp(5)
+                padding: dp(5)
+                size_hint_y: None
+                height: self.minimum_height
+                key_viewclass: 'viewclass'
+
+    # Bottom Navigation
+    BoxLayout:
+        size_hint_y: None
+        height: dp(60)
+        canvas.before:
+            Color:
+                rgba: C('#FFFFFF')
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        Button:
+            text: 'Download'
+            font_size: '14sp'
+            background_normal: ''
+            background_color: C('#10B981')
+            color: C('#FFFFFF')
+            # on_release: app.root.show_download_screen()
+        Button:
+            text: 'Play'
+            font_size: '14sp'
+            background_normal: ''
+            background_color: C('#6B7280')
+            color: C('#FFFFFF')
+            # on_release: app.root.show_play_screen()
+        Button:
+            text: 'Settings'
+            font_size: '14sp'
+            background_normal: ''
+            background_color: C('#6B7280')
+            color: C('#FFFFFF')
+            # on_release: app.root.show_settings_screen()
 """
-App ki downloads manager screen jahan ongoing aur completed downloads show hote hain.
-"""
-def __init__(self, **kwargs):
-super().__init__(**kwargs)
-self.name = 'downloads_screen' # ID for easy access
 
-main_layout = BoxLayout(orientation='vertical')
+# DownloadItem class for RecycleView
+class DownloadItem(RecycleDataViewBehavior, BoxLayout):
+    video_title = StringProperty('')
+    progress_text = StringProperty('')
+    progress_value = NumericProperty(0)
+    thumbnail = StringProperty('')
+    download_id = StringProperty('')
+    action_text = StringProperty('Pause') # Default action text
 
-main_layout.add_widget(Label(text='[b]Downloads[/b]', markup=True,
-font_size='24sp', size_hint_y=0.1))
+    def refresh_view_attrs(self, rv, index, data):
+        self.download_id = data['download_id']
+        self.video_title = data['video_title']
+        self.progress_text = data['progress_text']
+        self.progress_value = data['progress_value']
+        self.thumbnail = data['thumbnail']
+        self.action_text = data['action_text']
+        return super().refresh_view_attrs(rv, index, data)
 
-self.downloads_grid = GridLayout(cols=1, spacing=5, size_hint_y=None)
-self.downloads_grid.bind(minimum_height=self.downloads_grid.setter('height'))
+# DownloadManager class to handle download logic and state
+class DownloadManager:
+    def __init__(self):
+        self.downloads = {} # Dictionary to store download info: {id: {data, thread, status}}
+        self.download_data = [] # List for RecycleView data
+        self.next_download_id = 0
+        self.download_folder = self.get_download_folder()
 
-scroll_view = ScrollView()
-scroll_view.add_widget(self.downloads_grid)
-main_layout.add_widget(scroll_view)
+        # Download folder banayen agar mojood nahi hai
+        if not os.path.exists(self.download_folder):
+            os.makedirs(self.download_folder)
+            print(f"Download folder created: {self.download_folder}")
 
-self.add_widget(main_layout)
+    def get_download_folder(self):
+        # Android par public download folder istemal karein
+        if platform == 'android':
+            # Android/data/com.fasttube.app/files/Download
+            # Ya direct public Downloads folder
+            # external_storage_path = os.path.abspath(os.path.join(Environment.getExternalStorageDirectory().getAbsolutePath(), 'Download'))
+            # return external_storage_path
+            return str(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath())
+        else:
+            # Desktop par current directory mein 'downloads' folder
+            return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'downloads')
 
-def add_download(self, url, selected_format):
-"""Nayi download item ko list mein add karta hai."""
-# yt-dlp se video title fetch karein
-title = "Downloading..."
-try:
-ydl_opts = {'quiet': True, 'skip_download': True, 'forcejson': True, 'simulate': True}
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-info = ydl.extract_info(url, download=False)
-title = info.get('title', 'Unknown Video')
-except Exception as e:
-print(f"Error fetching title: {e}")
-title = "Unknown Video"
+    def add_download(self, url, format_id='best', title='Unknown Title', thumbnail=''):
+        download_id = str(self.next_download_id)
+        self.next_download_id += 1
 
-item = DownloadItem(url, title, selected_format)
-self.downloads_grid.add_widget(item)
+        download_info = {
+            'download_id': download_id,
+            'url': url,
+            'format_id': format_id,
+            'video_title': title,
+            'thumbnail': thumbnail,
+            'progress_text': 'Waiting...',
+            'progress_value': 0,
+            'status': 'pending', # pending, downloading, paused, completed, failed
+            'action_text': 'Pause',
+            'thread': None,
+            'start_time': 0,
+            'total_bytes': 0,
+            'downloaded_bytes': 0
+        }
+        self.downloads[download_id] = download_info
+        self.download_data.append({
+            'viewclass': 'DownloadItem',
+            **download_info
+        })
+        self.update_recycleview()
+        self.start_download(download_id)
+        return download_id
 
+    def update_recycleview(self):
+        # RecycleView ko update karne ke liye data list ko naya banayen
+        # Kivy mein RecycleView ko refresh karne ka yeh tareeqa hai
+        self.download_data = self.download_data[:]
+        App.get_running_app().root.ids.rv_downloads.data = self.download_data
+
+    def start_download(self, download_id):
+        download = self.downloads[download_id]
+        if download['status'] == 'pending' or download['status'] == 'paused':
+            download['status'] = 'downloading'
+            download['action_text'] = 'Pause'
+            download['start_time'] = time.time() # Download start time
+
+            # Download thread start karein
+            download['thread'] = threading.Thread(target=self._download_task, args=(download_id,))
+            download['thread'].daemon = True # App band hone par thread bhi band ho jaye
+            download['thread'].start()
+            self.update_recycleview()
+
+    def toggle_download_status(self, download_id):
+        download = self.downloads.get(download_id)
+        if not download:
+            return
+
+        if download['status'] == 'downloading':
+            download['status'] = 'paused'
+            download['action_text'] = 'Resume'
+            # Yahan thread ko pause karne ki logic aayegi (yt-dlp mein direct pause nahi hota, toh restart karna padega)
+            # Filhal sirf status update karein
+            Clock.schedule_once(lambda dt: self.update_recycleview(), 0) # UI update karein
+        elif download['status'] == 'paused':
+            download['status'] = 'pending' # Restarting as pending
+            download['action_text'] = 'Pause'
+            Clock.schedule_once(lambda dt: self.update_recycleview(), 0) # UI update karein
+            self.start_download(download_id) # Download dobara start karein
+
+    def delete_download(self, download_id):
+        if download_id in self.downloads:
+            # Agar download chal rahi ho to usay rok den
+            if self.downloads[download_id]['status'] == 'downloading':
+                self.downloads[download_id]['status'] = 'cancelled' # Thread ko cancel hone ka signal den
+                # Yahan thread ko force stop karne ki logic aayegi agar zaroori ho
+
+            # File ko delete karein
+            file_path = os.path.join(self.download_folder, f"{self.downloads[download_id]['video_title']}.mp4") # Ya jo bhi format ho
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"File deleted: {file_path}")
+                except Exception as e:
+                    print(f"Error deleting file {file_path}: {e}")
+
+            # Download data se remove karein
+            self.downloads.pop(download_id)
+            self.download_data = [item for item in self.download_data if item['download_id'] != download_id]
+            self.update_recycleview()
+            self.show_toast(f"Download deleted: {download_id}") # User ko message den
+
+    def _download_task(self, download_id):
+        download = self.downloads[download_id]
+        url = download['url']
+        format_id = download['format_id']
+        output_template = os.path.join(self.download_folder, '%(title)s.%(ext)s')
+
+        # yt-dlp hook function for progress updates
+        def progress_hook(d):
+            if download['status'] == 'cancelled':
+                raise yt_dlp.utils.DownloadError("Download cancelled by user.")
+
+            if d['status'] == 'downloading':
+                download['downloaded_bytes'] = d.get('downloaded_bytes', 0)
+                download['total_bytes'] = d.get('total_bytes', d.get('total_bytes_estimate', 0))
+                
+                p = d.get('fragment_index', 0) / d['fragment_count'] * 100 if 'fragment_index' in d and 'fragment_count' in d else d.get('percent', 0)
+                speed = d.get('speed', 0)
+                
+                download['progress_value'] = p
+                
+                # Speed ko human-readable format mein convert karein
+                speed_str = f"{speed / 1024:.2f} KiB/s" if speed < 1024*1024 else f"{speed / (1024*1024):.2f} MiB/s"
+                
+                # Total size ko human-readable format mein convert karein
+                total_size_str = f"{download['total_bytes'] / (1024*1024):.2f} MiB" if download['total_bytes'] > 0 else "N/A"
+
+                download['progress_text'] = f"{p:.1f}% - {speed_str} ({total_size_str})"
+                
+                # UI update ko main thread par schedule karein
+                Clock.schedule_once(lambda dt: self.update_recycleview(), 0)
+            elif d['status'] == 'finished':
+                download['status'] = 'completed'
+                download['progress_text'] = 'Completed!'
+                download['progress_value'] = 100
+                download['action_text'] = 'Done'
+                Clock.schedule_once(lambda dt: self.update_recycleview(), 0)
+                Clock.schedule_once(lambda dt: self.show_toast(f"Download completed: {download['video_title']}"), 0)
+            elif d['status'] == 'error':
+                download['status'] = 'failed'
+                download['progress_text'] = f"Failed: {d.get('error', 'Unknown error')}"
+                download['action_text'] = 'Retry'
+                Clock.schedule_once(lambda dt: self.update_recycleview(), 0)
+                Clock.schedule_once(lambda dt: self.show_toast(f"Download failed: {download['video_title']}"), 0)
+
+        ydl_opts = {
+            'format': format_id,
+            'outtmpl': output_template,
+            'progress_hooks': [progress_hook],
+            'noplaylist': True, # Sirf single video download karein
+            'retries': 5, # Download retries
+            'fragment_retries': 5,
+            'ignoreerrors': True, # Errors ko ignore karein taake process continue ho
+            'postprocessors': [{ # MP3 conversion ke liye
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }] if 'audio' in format_id else [], # Agar audio format select kiya gaya ho
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Video info fetch karein
+                info = ydl.extract_info(url, download=False)
+                download['video_title'] = info.get('title', 'Unknown Title')
+                download['thumbnail'] = info.get('thumbnail', '')
+                
+                # Agar download resume ho rahi ho
+                if download['downloaded_bytes'] > 0 and 'total_bytes' in download and download['total_bytes'] > 0:
+                    ydl_opts['continuedl'] = True # Resume download
+                    ydl_opts['noprogress'] = True # Progress hook handle karega
+
+                # Download start karein
+                ydl.download([url])
+        except yt_dlp.utils.DownloadError as e:
+            if "Download cancelled by user" in str(e):
+                print(f"Download {download_id} cancelled.")
+            else:
+                print(f"Download error for {url}: {e}")
+                download['status'] = 'failed'
+                download['progress_text'] = f"Failed: {e}"
+                Clock.schedule_once(lambda dt: self.update_recycleview(), 0)
+                Clock.schedule_once(lambda dt: self.show_toast(f"Download failed: {download['video_title']}"), 0)
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            download['status'] = 'failed'
+            download['progress_text'] = f"Failed: {e}"
+            Clock.schedule_once(lambda dt: self.update_recycleview(), 0)
+            Clock.schedule_once(lambda dt: self.show_toast(f"Download failed: {download['video_title']}"), 0)
+
+    def show_toast(self, message):
+        if platform == 'android':
+            Toast.makeText(PythonActivity.mActivity, String(message), Toast.LENGTH_SHORT).show()
+        else:
+            print(f"TOAST: {message}") # Desktop par console output
+
+# Main Kivy App Layout
+class FastTubeAppLayout(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.download_manager = DownloadManager()
+        
+        # Share Intent handling (Android only)
+        if platform == 'android':
+            self.handle_share_intent()
+            # Permissions request
+            # request_permissions()
+
+    def handle_share_intent(self):
+        # Intent data ko process karein
+        intent = PythonActivity.get = PythonActivity.getIntent()
+        action = intent.getAction()
+        type = intent.getType()
+
+        if action == Intent.ACTION_SEND and type == 'text/plain':
+            shared_text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if shared_text:
+                print(f"Shared text received: {shared_text}")
+                self.ids.url_input.text = shared_text # Input field mein link paste karein
+                self.show_quality_selection(shared_text) # Quality selection show karein
+
+    def search_or_process_url(self, query):
+        if query.startswith('http'):
+            self.show_quality_selection(query)
+        else:
+            self.perform_search(query)
+
+    def perform_search(self, query):
+        # Search logic yahan aayegi
+        # Filhal demo ke liye
+        self.show_toast(f"Searching for: {query}")
+        print(f"Searching for: {query}")
+        # Placeholder: yt-dlp se search results la sakte hain
+        # ya kisi search API ka istemal kar sakte hain
+
+    def show_quality_selection(self, url):
+        # Video details fetch karein aur quality options show karein
+        self.show_toast(f"Fetching details for: {url}")
+        print(f"Fetching details for: {url}")
+        
+        # Ek naya thread start karein taake UI block na ho
+        threading.Thread(target=self._fetch_and_show_formats, args=(url,)).start()
+
+    def _fetch_and_show_formats(self, url):
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'force_generic_extractor': False, # YT-DLP ko site detect karne den
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                formats = info.get('formats', [])
+                video_title = info.get('title', 'Unknown Title')
+                thumbnail = info.get('thumbnail', '')
+
+                # Formats ko filter aur organize karein
+                available_formats = []
+                for f in formats:
+                    if f.get('ext') in ['mp4', 'webm', 'm4a'] and f.get('acodec') != 'none': # Video with audio
+                        if f.get('vcodec') != 'none': # Video format
+                            quality = f.get('resolution', 'N/A')
+                            if quality == 'N/A' and f.get('height'):
+                                quality = f"{f['height']}p"
+                            available_formats.append({
+                                'format_id': f['format_id'],
+                                'description': f"{quality} ({f.get('ext')})",
+                                'size': f.get('filesize', f.get('filesize_approx', 0))
+                            })
+                        elif f.get('acodec') != 'none' and f.get('vcodec') == 'none': # Audio only
+                            available_formats.append({
+                                'format_id': f['format_id'],
+                                'description': f"Audio only ({f.get('acodec')}) - {f.get('abr', 'N/A')}k",
+                                'size': f.get('filesize', f.get('filesize_approx', 0))
+                            })
+                
+                # Sort by quality/size
+                available_formats.sort(key=lambda x: x['size'] if x['size'] else 0, reverse=True)
+
+                # UI ko main thread par update karein
+                Clock.schedule_once(lambda dt: self._display_format_options(url, video_title, thumbnail, available_formats), 0)
+
+        except yt_dlp.utils.DownloadError as e:
+            error_msg = f"Error fetching details: {e}"
+            print(error_msg)
+            Clock.schedule_once(lambda dt: self.show_toast(error_msg), 0)
+        except Exception as e:
+            error_msg = f"An unexpected error occurred while fetching formats: {e}"
+            print(error_msg)
+            Clock.schedule_once(lambda dt: self.show_toast(error_msg), 0)
+
+    def _display_format_options(self, url, video_title, thumbnail, formats):
+        # Yahan ek pop-up ya modal banayenge jo quality options show karega
+        # Filhal, demo ke liye pehla option download kar denge
+        if formats:
+            selected_format = formats[0] # Pehla (highest quality) select karein demo ke liye
+            self.download_manager.add_download(
+                url,
+                selected_format['format_id'],
+                video_title,
+                thumbnail
+            )
+            self.show_toast(f"Download started: {video_title}")
+        else:
+            self.show_toast("No downloadable formats found.")
+
+    def show_toast(self, message):
+        self.download_manager.show_toast(message) # DownloadManager ke toast function ko call karein
+
+# Main App class
 class FastTubeApp(App):
-"""
-FastTube Kivy Application ki main class.
-"""
-def build(self):
-self.title = 'FastTube' # App ka naam
+    def build(self):
+        # Kivy UI layout ko load karein
+        self.root = Builder.load_string(KV)
+        return self.root
 
-sm = ScreenManager(id='screen_manager') # ScreenManager ko ID dein
-sm.add_widget(MainScreen(name='main_screen')) # MainScreen ko ID dein
-sm.add_widget(DownloadsScreen(name='downloads_screen')) # DownloadsScreen ko ID dein
+    def on_start(self):
+        # App start hone par permissions request karein (Android only)
+        # if platform == 'android':
+        #     request_permissions()
+        pass # Filhal permissions ko Buildozer handle karega
 
-root_layout = BoxLayout(orientation='vertical')
-root_layout.add_widget(sm)
+    def on_pause(self):
+        # App pause hone par downloads ko pause karne ki logic yahan aayegi
+        return True # True return karna zaroori hai
 
-# Bottom Navigation Bar
-nav_bar = BoxLayout(size_hint_y=0.1, height=50) # Fixed height for nav bar
-
-btn_home = Button(
-text='[b]ðŸ  Home[/b]',
-markup=True,
-font_size='16sp',
-background_normal='',
-background_color=(0.1, 0.1, 0.1, 1) # Dark background
-)
-btn_downloads = Button(
-text='[b]â¬‡ Downloads[/b]',
-markup=True,
-font_size='16sp',
-background_normal='',
-background_color=(0.1, 0.1, 0.1, 1) # Dark background
-)
-
-btn_home.bind(on_press=lambda x: setattr(sm, 'current', 'main_screen'))
-btn_downloads.bind(on_press=lambda x: setattr(sm, 'current', 'downloads_screen'))
-
-nav_bar.add_widget(btn_home)
-nav_bar.add_widget(btn_downloads)
-
-root_layout.add_widget(nav_bar)
-
-return root_layout
+    def on_resume(self):
+        # App resume hone par downloads ko resume karne ki logic yahan aayegi
+        pass
 
 if __name__ == '__main__':
-FastTubeApp().run()
+    FastTubeApp().run()
