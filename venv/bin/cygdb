@@ -1,4 +1,4 @@
-#!/home/adnanali/FastTube-Android-App/venv/bin/python3
+#!/home/adnanali/FastTube-Android-App/venv/bin/python3.9
 # -*- coding: utf-8 -*-
 import re
 import sys
