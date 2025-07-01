@@ -3,5 +3,5 @@ requests
 certifi
 yt-dlp
 pyjnius
-ffmpeg
 Pillow
+
